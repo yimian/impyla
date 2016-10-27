@@ -18,12 +18,14 @@ from __future__ import absolute_import
 
 import re
 
+from sqlalchemy import util as sa_util
 from sqlalchemy.dialects import registry
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.sql.compiler import IdentifierPreparer, GenericTypeCompiler
 from sqlalchemy.types import (BOOLEAN, SMALLINT, BIGINT, TIMESTAMP, FLOAT,
-                              DECIMAL, Integer, Float, String)
+                              DECIMAL, Integer, Float, String, NullType)
 
+from impala import datatypes
 
 registry.register('impala', 'impala.sqlalchemy', 'ImpalaDialect')
 
@@ -106,10 +108,11 @@ _impala_type_to_sqlalchemy_type = {
     'FLOAT': FLOAT,
     'DOUBLE': DOUBLE,
     'STRING': STRING,
-    'DECIMAL': DECIMAL}
+    'DECIMAL': DECIMAL
+}
 
 
-class ImpalaDialect(DefaultDialect):
+class _ImpalaDialect(DefaultDialect):
     name = 'impala'
     driver = 'impala'
     paramstyle = 'pyformat'
@@ -189,3 +192,86 @@ class ImpalaDialect(DefaultDialect):
     def do_rollback(self, dbapi_connection):
         # no transactions in impala
         pass
+
+
+class ImpalaDialect(_ImpalaDialect):
+    def get_columns(self, connection, table_name, schema=None, **kwargs):
+        # pylint: disable=unused-argument
+        name = table_name
+        if schema is not None:
+            name = '%s.%s' % (schema, name)
+
+        rows = connection.execute('DESCRIBE %s' % name).fetchall()
+        return _DescribeResultParser().parse(rows)
+
+
+class _DescribeResultParser(object):
+    def parse(self, rows):
+        columns = []
+        for (col_name, col_type, _comment) in rows:
+
+            dt = datatypes.TypeParser(col_type).parse()
+            if datatypes.is_primitive_type(dt):
+                columns.append((col_name, dt.name))
+            else:
+                columns += self._expand_complex_type(col_name, dt)
+
+        result = [{
+                      'name': col_name,
+                      'type': self._impala_type_to_sa_type(col_name, col_type),
+                      'nullable': True,
+                      'autoincrement': False
+                  } for col_name, col_type in columns]
+        return result
+
+    def _impala_type_to_sa_type(self, col_name, col_type):
+        if isinstance(col_type, datatypes.DataType):
+            col_type = col_type.name
+        try:
+            sa_col_type = _impala_type_to_sqlalchemy_type[col_type.upper()]
+        except KeyError:
+            sa_util.warn("Did not recognize type '%s' of column '%s'" % (
+                col_type, col_name))
+            sa_col_type = NullType
+        return sa_col_type
+
+    def _expand_complex_type(self, col_name, col_type):
+        if datatypes.is_primitive_type(col_type):
+            return [(col_name, col_type)]
+        if isinstance(col_type, datatypes.Map):
+            return self._expand_map_type(col_name, col_type)
+        if isinstance(col_type, datatypes.Array):
+            return self._expand_array_type(col_name, col_type)
+        if isinstance(col_type, datatypes.Struct):
+            return self._expand_struct_type(col_name, col_type)
+        raise TypeError()
+
+    def _expand_map_type(self, col_name, map_type):
+        """Expand a map type column to multi primitive type columns."""
+        columns = [('%s.KEY' % col_name, map_type.key_type)]
+        if isinstance(map_type.value_type, datatypes.Struct):
+            inner_name = col_name
+        else:
+            inner_name = '%s.VALUE' % col_name
+        value_types = self._expand_complex_type(inner_name, map_type.value_type)
+        columns += value_types
+        return columns
+
+    def _expand_array_type(self, col_name, array_type):
+        """Expand a array type column to multi primitive type columns."""
+        if isinstance(array_type.value_type, datatypes.Struct):
+            inner_name = col_name
+        else:
+            inner_name = '%s.ITEM' % col_name
+        value_types = self._expand_complex_type(inner_name, array_type.value_type)
+        return value_types
+
+    def _expand_struct_type(self, col_name, struct_type):
+        """Expand a struct type column to multi primitive type columns."""
+        columns = []
+        for n, t in zip(struct_type.names, struct_type.types):
+            if datatypes.is_primitive_type(t):
+                columns.append(('%s.%s' % (col_name, n), t))
+            else:
+                columns += self._expand_complex_type('%s.%s' % (col_name, n), t)
+        return columns

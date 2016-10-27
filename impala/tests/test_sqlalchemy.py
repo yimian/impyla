@@ -19,6 +19,9 @@ from sqlalchemy import Table, Column
 from sqlalchemy.schema import MetaData, CreateTable
 
 from impala.sqlalchemy import STRING, INT, DOUBLE, TINYINT
+from impala.tests.util import ImpylaTestEnv
+
+ENV = ImpylaTestEnv()
 
 
 def test_sqlalchemy_compilation():
@@ -35,3 +38,45 @@ def test_sqlalchemy_compilation():
     expected = ('\nCREATE TABLE mytable (\n\tcol1 STRING, \n\tcol2 TINYINT, '
                 '\n\tcol3 INT, \n\tcol4 DOUBLE\n)\n\n')
     assert expected == observed
+
+
+def _check_columns(tbl, expected):
+    columns = [(x.name, x.type.__visit_name__) for x in tbl.columns]
+    assert columns == expected
+
+
+def test_reflect_tables():
+    engine = create_engine('impala://{}:{}/tm_data_dress'.format(ENV.host, ENV.port))
+    metadata = MetaData(engine)
+    metadata.reflect()
+
+    _check_columns(metadata.tables['category'], [('category_id', 'INT'),
+                                                 ('name', 'STRING')])
+
+    _check_columns(metadata.tables['shop'], [('shop_id', 'INT'),
+                                             ('url', 'STRING'),
+                                             ('name', 'STRING'),
+                                             ('created_at', 'TIMESTAMP')])
+
+    _check_columns(metadata.tables['product_wide'], [('product_id', 'BIGINT'),
+                                                     ('brand_id', 'INT'),
+                                                     ('category_id', 'INT'),
+                                                     ('shop_id', 'INT'),
+                                                     ('title', 'STRING'),
+                                                     ('brand_name', 'STRING'),
+                                                     ('category_name', 'STRING'),
+                                                     ('shop_name', 'STRING'),
+                                                     ('code', 'STRING'),
+                                                     ('spu_id', 'BIGINT'),
+                                                     ('year', 'SMALLINT'),
+                                                     ('season', 'STRING'),
+                                                     ('pubdate', 'TIMESTAMP'),
+                                                     ('pubprice', 'DOUBLE'),
+                                                     ('skc_list.id', 'BIGINT'),
+                                                     ('skc_list.color_band', 'STRING'),
+                                                     ('created_at', 'TIMESTAMP')])
+
+    _check_columns(metadata.tables['raw_tags'], [('product_id', 'BIGINT'),
+                                                 ('brand_id', 'INT'),
+                                                 ('tags.KEY', 'STRING'),
+                                                 ('tags.VALUE', 'STRING')])
