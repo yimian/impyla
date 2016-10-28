@@ -21,7 +21,7 @@ import re
 from sqlalchemy import util as sa_util
 from sqlalchemy.dialects import registry
 from sqlalchemy.engine.default import DefaultDialect
-from sqlalchemy.sql.compiler import IdentifierPreparer, GenericTypeCompiler
+from sqlalchemy.sql.compiler import IdentifierPreparer, GenericTypeCompiler, SQLCompiler
 from sqlalchemy.types import (BOOLEAN, SMALLINT, BIGINT, TIMESTAMP, FLOAT,
                               DECIMAL, Integer, Float, String, NullType)
 
@@ -44,6 +44,11 @@ class DOUBLE(Float):
 
 class STRING(String):
     __visit_name__ = 'STRING'
+
+
+class ImpalaCompiler(SQLCompiler):
+    def visit_concat_op_binary(self, binary, operator, **kw):
+        return "concat(%s, %s)" % (self.process(binary.left), self.process(binary.right))
 
 
 class ImpalaTypeCompiler(GenericTypeCompiler):
@@ -117,6 +122,7 @@ class _ImpalaDialect(DefaultDialect):
     driver = 'impala'
     paramstyle = 'pyformat'
     preparer = ImpalaIdentifierPreparer
+    statement_compiler = ImpalaCompiler
     max_identifier_length = 128
     supports_sane_rowcount = False
     supports_sane_multi_rowcount = False
