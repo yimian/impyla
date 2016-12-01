@@ -46,7 +46,7 @@ import versioneer  # noqa
 
 
 setup(
-    name='impyla',
+    name='ym-impyla',
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     description='Python client for the Impala distributed query engine',
