@@ -55,7 +55,7 @@ setup(
     maintainer_email='wes.mckinney@twosigma.com',
     author='Uri Laserson',
     author_email='laserson@cloudera.com',
-    url='https://github.com/cloudera/impyla',
+    url='https://github.com/yimian/impyla',
     packages=packages,
     install_package_data=True,
     package_data={'impala.thrift': ['*.thrift']},
