@@ -14,9 +14,11 @@
 
 from __future__ import absolute_import
 
+import re
 import sys
 
 import ez_setup
+
 ez_setup.use_setuptools()
 
 from setuptools import setup, find_packages
@@ -41,14 +43,13 @@ elif PY3:
                                       'impala._thrift_gen.*'])
     reqs.append('thriftpy>=0.3.5')
 
-
-import versioneer  # noqa
-
+with open('impala/__init__.py', 'r') as fd:
+    version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]',
+                        fd.read(), re.MULTILINE).group(1)
 
 setup(
     name='ym-impyla',
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
+    version=version,
     description='Python client for the Impala distributed query engine',
     long_description=readme(),
     maintainer='Wes McKinney',
